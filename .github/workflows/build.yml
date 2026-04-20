@@ -27,12 +27,12 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
         with:
-          gradle-version: '8.4'
+          gradle-version: '8.9'
 
       - name: Generate Gradle Wrapper
         run: |
           # gradle/actions/setup-gradle installs gradle to PATH, use it to generate wrapper jar
-          gradle wrapper --gradle-version 8.4
+          gradle wrapper --gradle-version 8.9
           chmod +x gradlew
 
       - name: Build Debug APK
