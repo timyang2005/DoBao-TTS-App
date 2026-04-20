@@ -111,6 +111,10 @@ public class NodeService extends Service {
     private void startNodeProcess(File workDir) {
         log("[系统] 工作目录: " + workDir.getAbsolutePath() + "\n", Color.CYAN);
 
+        // 列出工作目录结构（调试用）
+        log("[系统] 目录内容:\n", Color.GRAY);
+        listDir(workDir, "  ");
+
         // Step 1: 确保 Node.js 可用
         File nodeBin = ensureNodeBinary();
         if (nodeBin == null) {
@@ -120,20 +124,26 @@ public class NodeService extends Service {
         }
         log("[✓] Node.js: " + nodeBin.getAbsolutePath() + "\n", Color.GREEN);
 
-        // Step 2: 解压 node_modules（如果尚未解压）
-        File appDir = new File(workDir, "app");
-        if (!extractNodeModules(appDir)) {
-            log("[✗] node_modules 准备失败\n", Color.RED);
+        // Step 2: 找到 server.js
+        File serverJs = findServerJs(workDir);
+        if (serverJs == null) {
+            log("[✗] 在 " + workDir.getAbsolutePath() + " 下未找到 server.js\n", Color.RED);
             notifyStatus(false);
             return;
         }
+        log("[✓] server.js: " + serverJs.getAbsolutePath() + "\n", Color.GREEN);
 
-        // Step 3: 启动 server.js
-        File serverJs = new File(appDir, "src/server.js");
-        if (!serverJs.exists()) {
-            log("[✗] 找不到 " + serverJs.getAbsolutePath() + "\n", Color.RED);
-            notifyStatus(false);
-            return;
+        // Step 3: 解压 node_modules（如果尚未解压）
+        // server.js 的父目录或同级目录找 node_modules
+        File nodeModulesDir = findNodeModulesDir(serverJs);
+        if (nodeModulesDir != null && !new File(nodeModulesDir, "node_modules").exists()) {
+            if (!extractNodeModules(nodeModulesDir)) {
+                log("[✗] node_modules 准备失败\n", Color.RED);
+                notifyStatus(false);
+                return;
+            }
+        } else if (nodeModulesDir == null) {
+            log("[!] 未找到 node_modules.tar.gz，将尝试直接启动\n", Color.YELLOW);
         }
 
         log("\n[系统] 正在启动 Node.js TTS 服务...\n", Color.CYAN);
@@ -146,8 +156,10 @@ public class NodeService extends Service {
             command.add(nodeBin.getAbsolutePath());
             command.add(serverJs.getAbsolutePath());
 
+            // workDir 使用 server.js 的父目录（这样相对路径引用能正确解析）
+            File execDir = serverJs.getParentFile();
             ProcessBuilder pb = new ProcessBuilder(command);
-            pb.directory(workDir);
+            pb.directory(execDir);
             pb.redirectErrorStream(true); // stderr 合并到 stdout
             pb.environment().put("NODE_ENV", "production");
             pb.environment().put("HOME", getFilesDir().getAbsolutePath());
@@ -473,6 +485,61 @@ public class NodeService extends Service {
             }
         }
         return null;
+    }
+
+    /**
+     * 递归搜索 server.js
+     */
+    private File findServerJs(File dir) {
+        if (dir == null || !dir.exists()) return null;
+        File direct = new File(dir, "server.js");
+        if (direct.exists()) return direct;
+        if (dir.isDirectory() && dir.listFiles() != null) {
+            for (File sub : dir.listFiles()) {
+                if (sub.isDirectory() && !sub.getName().equals("node_modules")
+                        && !sub.getName().startsWith(".")) {
+                    File found = findServerJs(sub);
+                    if (found != null) return found;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 查找包含 node_modules 或 node_modules.tar.gz 的目录
+     */
+    private File findNodeModulesDir(File serverJs) {
+        // 从 server.js 向上查找
+        File dir = serverJs.getParentFile();
+        while (dir != null) {
+            if (new File(dir, "node_modules").exists()
+                    || new File(dir, "node_modules.tar.gz").exists()) {
+                return dir;
+            }
+            dir = dir.getParentFile();
+        }
+        return null;
+    }
+
+    /**
+     * 列出目录结构（调试用，最多 3 层）
+     */
+    private void listDir(File dir, String indent) {
+        if (dir == null || !dir.isDirectory() || dir.listFiles() == null) return;
+        File[] files = dir.listFiles();
+        if (files == null) return;
+        int depth = indent.length() / 2;
+        if (depth > 3) {
+            log(indent + "... (更多)\n", Color.GRAY);
+            return;
+        }
+        for (File f : files) {
+            if (f.getName().equals("node_modules") || f.getName().startsWith(".")) continue;
+            String prefix = f.isDirectory() ? "📁 " : "📄 ";
+            log(indent + prefix + f.getName() + "\n", Color.GRAY);
+            if (f.isDirectory()) listDir(f, indent + "  ");
+        }
     }
 
     // ==================== 通知相关 ====================
