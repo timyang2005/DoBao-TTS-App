@@ -275,33 +275,71 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private boolean isValidInstall(File dir) {
-        // 检查 server.js 是否存在（可能在子目录）
-        File serverJs = new File(dir, "app/src/server.js");
-        if (serverJs.exists()) return true;
-        // 也尝试直接找
-        for (File sub : dir.listFiles() != null ? dir.listFiles() : new File[0]) {
-            if (sub.isDirectory()) {
-                File nested = new File(sub, "app/src/server.js");
-                if (nested.exists()) return true;
-            }
-        }
-        return false;
+        // 递归搜索 server.js（适配不同 ZIP 包结构）
+        return findServerJs(dir) != null;
     }
 
-    private void updatePackageInfo(File dir) {
-        // 查找版本信息
-        File platformFile = new File(dir, ".platform");
-        if (!platformFile.exists()) {
-            // 尝试子目录
-            for (File sub : dir.listFiles() != null ? dir.listFiles() : new File[0]) {
-                File nested = new File(sub, ".platform");
-                if (nested.exists()) {
-                    platformFile = nested;
-                    break;
+    private File findWorkDir(File baseDir) {
+        // 先检查直接路径
+        File direct = new File(baseDir, "app/src/server.js");
+        if (direct.exists()) return baseDir;
+
+        // 递归搜索 server.js
+        File serverJs = findServerJs(baseDir);
+        if (serverJs != null) {
+            // workDir 是 server.js 所在的目录（向上两级，通常是项目根目录）
+            // 先尝试 server.js 的父目录作为 workDir
+            File parent = serverJs.getParentFile();
+            if (parent != null) {
+                // 如果 server.js 在 src/ 下，workDir 是 src 的父目录（即 app/ 或项目根）
+                // 如果 server.js 直接在根目录，workDir 就是根目录
+                File grandParent = parent.getParentFile();
+                if (grandParent != null) {
+                    // 检查 grandParent 下是否有 node_modules
+                    File nm = new File(grandParent, "node_modules");
+                    if (nm.exists()) return grandParent;
+                    // 检查 parent 下是否有 node_modules
+                    nm = new File(parent, "node_modules");
+                    if (nm.exists()) return parent;
+                }
+                // 默认返回 server.js 的父目录
+                return parent;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 递归搜索 server.js 文件
+     */
+    private File findServerJs(File dir) {
+        if (dir == null || !dir.exists()) return null;
+        File direct = new File(dir, "server.js");
+        if (direct.exists()) return direct;
+        if (dir.isDirectory() && dir.listFiles() != null) {
+            for (File sub : dir.listFiles()) {
+                if (sub.isDirectory() && !sub.getName().equals("node_modules")
+                        && !sub.getName().startsWith(".")) {
+                    File found = findServerJs(sub);
+                    if (found != null) return found;
                 }
             }
         }
+        return null;
+    }
+
+    private void updatePackageInfo(File dir) {
         String info = "已导入: " + dir.getName();
+        // 显示找到的 server.js 路径
+        File serverJs = findServerJs(dir);
+        if (serverJs != null) {
+            File workDir = findWorkDir(dir);
+            if (workDir != null) {
+                info += "\n工作目录: " + workDir.getName();
+            }
+        } else {
+            info += "\n[!] 未找到 server.js";
+        }
         tvPackageInfo.setText(info);
         tvPackageInfo.setTextColor(Color.parseColor("#00C853"));
     }
