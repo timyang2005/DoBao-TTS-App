@@ -371,20 +371,6 @@ public class MainActivity extends AppCompatActivity {
         btnStop.setEnabled(true);
     }
 
-    private File findWorkDir(File baseDir) {
-        // 直接在 baseDir 下
-        if (new File(baseDir, "app/src/server.js").exists()) return baseDir;
-        // 子目录
-        if (baseDir.listFiles() != null) {
-            for (File sub : baseDir.listFiles()) {
-                if (sub.isDirectory() && new File(sub, "app/src/server.js").exists()) {
-                    return sub;
-                }
-            }
-        }
-        return null;
-    }
-
     private void stopTtsService() {
         if (serviceBound && nodeService != null) {
             nodeService.stopNode();
